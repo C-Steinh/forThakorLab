@@ -1,0 +1,4 @@
+Date:		Subject:		Type:
+Nov. 8, 2016	AB1		Able-bodied
+Nov. 9, 2016	AB2		Able-bodied
+Nov. 16, 2016	A03		Amputee 

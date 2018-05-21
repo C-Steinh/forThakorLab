@@ -1,0 +1,37 @@
+This EMG data was collected from a transhumeral (left) amputee (male, 29 y.o.)
+
+You want to look at the 'Processed_Training_data_Sub1.mat' files.
+
+The EMG features from each electrode (there are 3 for each electrode) are in the 'output.X' array of each file. The 'output.L' vector is the corresponding grasp label.
+
+The subject performed 14 grip classes. Each grasp is held and the features recorded (and stored) for 3 seconds. Each grasp is presented once in every file. There were 3 trials...so each grasp was performed 3 times.
+
+The features for each electrode are:
+
+1. Electrode 1: Mean Absolute Value
+2. Electrode 1: Variance
+3. Electrode 1: Waveform Length
+
+
+4. Electrode 2: Mean Absolute Value
+5. Electrode 2: Variance
+6. Electrode 2: Waveform Length
+
+
+The Labels are numbered from 1 through 15. They are:
+
+1. Hand Open
+2. Hand Close
+3. Supinate
+4. Pronate
+5. Index Point
+6. Tripod Grip
+7. Rest
+8. Wrist Extend
+9. Wrist Flex
+10. Key Grip
+11. Ulnar Deviation
+12. Radial Deviation
+13. Thumb to Pinky
+14. Precision Open
+15. Precision Closed
