@@ -12,7 +12,7 @@ class TimeDomainFilter:
         feat = np.zeros( self.__num_features * num_channels )
         for chan in range( 0, num_channels ):
             idx = chan * self.__num_features
-            feat[ idx ] = np.sum( np.abs( raw[ :, chan ] ) )
+            feat[ idx ] = np.mean( np.abs( raw[ :, chan ] ) )
             feat[ idx + 1 ] = np.var( raw[ :, chan ] )
             feat[ idx + 2 ] = np.sum( np.abs( raw[ :-1, chan ] - raw[ 1:, chan ] ) )
             
