@@ -225,9 +225,9 @@ def openN(TRAINING_DATA):
 #################################### The main function #########################################
 
 def main():
-
-    dir = '/home/cynthia/forThakorLab/chris_train_6_18'
-    text_file = open(''.join([dir,'output.txt']),'w')
+    dir = ''
+    
+    text_file = open('output.txt','w')
     relv_files = []
     #find all files in the directory
     dirFiles = os.listdir('.')
@@ -235,8 +235,8 @@ def main():
         if 'train' in files:
             relv_files.append(files)
     relv_files = (sorted(relv_files))
-    # 0,1,2,3,3,4,5,6,7,7.5
-    shift_amounts =[0, 1, 2, 3, 4, 5, 6, 7] #tests performed  - 4/19
+
+    shift_amounts =[0, 1, 2, 3, 3, 4, 5, 6, 7, 7.5] #tests performed  - 4/19
 
     # grasps used
     grasps =  [ 'open', 'power', 'tripod', 'pronate', 'supinate' ]
@@ -246,7 +246,7 @@ def main():
     print(best_pos)
     #classification using the old classifier with shifted features
 
-    for nshifts in range(0,len(shift_amounts)):
+    for nshifts in range(0,len(relv_files)):
         pred_num = nshifts
         cm_shift, yh_shift, yt_shift = classify_data_w_shift(openN(relv_files[0]),openN(relv_files[pred_num]), grasps,shift_amounts[pred_num])
 

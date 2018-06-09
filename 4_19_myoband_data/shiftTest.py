@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 
-def make_feats(trial, grasps,shift):
+def make_feats(trial,grasps):
     WINDOW_SIZE = 10                                # in samples
     WINDOW_STEP = 2
 
@@ -25,18 +25,26 @@ def make_feats(trial, grasps,shift):
     key_count = 0
     X = []
     y=  []
-    for grasp in grasps:                        # for each grasp
-       # print( grasp, '...', end = ' ', flush = True )
+
+    for grasp in grasps:
         emg = trial[ grasp ][ 'MyoArmband' ][ :, :8 ]  # grab the raw EMG data
-        emg = np.roll(emg,shift,axis = 0)
         # calculating stuff
         feat = []
         label = []
  
         n_samples = emg.shape[0]
-        for sample in range( WINDOW_SIZE, n_samples, WINDOW_STEP ):
-            feat.append( td5.filter( emg[sample-WINDOW_SIZE:sample, :] ) )                  # calculate features
+      
+        for sample in range(WINDOW_SIZE,n_samples,WINDOW_STEP):# round(round(0.35*n_samples),-1),round(round(0.65*n_samples),-1), WINDOW_STEP ):
+
+            #feat.append( td5.filter( emg[sample-WINDOW_SIZE:sample, :] ))
+            #MAV_Es = np.zeros(8)
+            #for nEs in range(0,8):
+            #    MAV_Es[nEs] =(np.mean(abs( emg[sample-WINDOW_SIZE:sample, nEs] )))
+            feat.append(td5.filter( emg[sample-WINDOW_SIZE:sample, :]))               # calculate features
+                
+            #feat.append(MAV_Es)
             label.append( key_count )
+    
         X.append( np.vstack( feat ) )
         y.append( np.vstack( label ) )
 
@@ -45,9 +53,11 @@ def make_feats(trial, grasps,shift):
     # these are now matrices
     X = np.vstack( X )
     y = np.squeeze( np.vstack( y ) )#labels which gesture it the window is from
+    
+    #print( '\nPreprocess data...', end = ' ', flush = True )
 
-    print( '\nPreprocess data...', end = ' ', flush = True )
-    #t1 = time.clock()
+    # try just classifying with MAV
+    
     #zscore the data - keeps variance the same
     mmfilter = MinMaxFilter( X, dynamic = True )
     X = mmfilter.filter( X ) # all the original train data is train data for this new test run
@@ -63,31 +73,32 @@ def classify_data_w_shift(TRAINING_DATA, TEST_DATA, grasps, shift):
 
     #shift Xtrain, ytrain should remain the same b/c the gesture order is still the same
 
-    #t2 = time.clock()
-    #print( 1000 * ( t2 - t1 ), 'ms' )
-
     #make feature vectors for test and training data
     #print(shift)
-    Xtrain, ytrain = make_feats(train_trial,grasps,shift)
-    Xtest, ytest = make_feats(test_trial,grasps,0)
+     # print( grasp, '...', end = ' ', flush = True )
+
+    for grasp in grasps:                        # for each grasp
+        emg_test = test_trial[ grasp ][ 'MyoArmband' ][ :, :8 ]
+       # print(emg_test[:5,:])
+        test_trial[grasp]['MyoArmband'] = np.roll(emg_test,shift, axis =1)
+       # print(test_trial[grasp]['MyoArmband'][:5,:])
+    Xtrain, ytrain = make_feats(train_trial,grasps)
+    Xtest, ytest = make_feats(test_trial,grasps)
      
     # use the original train data on the new test data but shifted!
     #try split
     Xtrain, Xble,ytrain,ybleh = train_test_split(Xtrain,ytrain,test_size = 0.33)
-    
-    print('Creating classifiers...', end= ' ', flush = True)
+
+    #print('Creating classifiers...', end= ' ', flush = True)
     mdl = eval( MODEL )( Xtrain, ytrain)
 
-    print('Testing classifier...', end = ' ', flush = True)
-    #t1 = time.clock()
+    #print('Testing classifier...', end = ' ', flush = True)
     yhat, yprob = mdl.predict( Xtest, prob = True )
-    #t2 = time.clock()
-    #print( 1000 * ( t2 - t1 ), 'ms (', 1000 * ( t2 - t1 ) / np.size( yhat ), 'ms per decision )' )
+   
 
     print('Classifier done!')
 
-    class_labels =[  'HO', 'HC', 'TR', 'WP', 'WS' ]
-    #[ 'RE', 'HO', 'HC', 'TR', 'WP', 'WS' ]
+    class_labels =[ 'RE', 'HO', 'HC', 'TR', 'WP', 'WS' ]
     cm = confusion_matrix( ytest, yhat, labels = class_labels, cmap = 'Blues' )
     return cm, yhat, ytest
 
@@ -239,38 +250,29 @@ def main():
     shift_amounts =[0, 1, 2, 3, 4, 5, 6, 7] #tests performed  - 4/19
 
     # grasps used
-    grasps =  [ 'open', 'power', 'tripod', 'pronate', 'supinate' ]
+    grasps =  ['rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
     # [ 'rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
 
     best_pos = find_location(relv_files,grasps,text_file,shift_amounts)
     print(best_pos)
     #classification using the old classifier with shifted features
 
-    for nshifts in range(0,len(shift_amounts)):
-        pred_num = nshifts
-        cm_shift, yh_shift, yt_shift = classify_data_w_shift(openN(relv_files[0]),openN(relv_files[pred_num]), grasps,shift_amounts[pred_num])
-
-        cm_ns, yh_ns, yt_ns = classify_data_w_shift(openN(relv_files[0]),openN(relv_files[pred_num]), grasps,0)
-
-        for n in range(0,5):
-            print((cm_shift[n,n]-cm_ns[n,n]))
-   
-#    r_cnt =0
-#    pr_cnt = 0
-#    for n in range(0,len(yt)):
-#        if yt[n] == 4:
-#            r_cnt = r_cnt +1
- #            if yh[n] == 4:
-#                pr_cnt = pr_cnt + 1
-#    print(r_cnt, pr_cnt, pr_cnt/r_cnt)
-#    print(np.where(yt is 4))
-   # for n in range(0,len(yt)):
-   #     print('\t'.join([str(yt[n]),str(yh[n])]))
+    # for nshifts in range(0,len(shift_amounts)):
+    for pred_num in range(0,len(relv_files)-1):
+        print(str(pred_num))
+        #q= openN(relv_files[pred_num])
+        cm_shift, yh_shift, yt_shift = classify_data_w_shift(openN(relv_files[0]),openN(relv_files[pred_num]), grasps,-shift_amounts[pred_num])
         
-    #print(np.transpose(yt.)
-    #print(yh.shape)
- 
-    #best_pos[4][2])
+        cm_ns, yh_shift, yt_shift = classify_data_w_shift(openN(relv_files[0]),openN(relv_files[pred_num]), grasps,0)
+       
+
+        shft_res = np.zeros(5)
+        for n in range(0,5):
+            shft_res[n] = cm_shift[n,n]-cm_ns[n,n]
+            print(str(cm_shift[n,n]-cm_ns[n,n]))
+
+        print(str(np.mean(shft_res)),str(np.std(shft_res)))
+       #best_pos[4][2])
       
 if __name__ == '__main__':
     main()
