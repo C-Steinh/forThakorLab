@@ -1,0 +1,305 @@
+import sys
+import os
+from os.path import dirname, abspath
+sys.path.insert( 0, dirname( dirname( abspath( __file__ ) ) ) )
+
+from mite.filters import TimeDomainFilter, JointPositionFilter, MinMaxFilter
+from mite.classifiers import *
+from mite.utils.Metrics import confusion_matrix
+
+import pickle
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+from sklearn.model_selection import train_test_split
+
+def classify(Xtrain,ytrain,Xtest,ytest):
+    MODEL = 'SRC'
+    #print('Creating classifiers...', end= ' ', flush = True)
+    mdl = eval( MODEL )( Xtrain, ytrain)
+
+    #print('Testing classifier...', end = ' ', flush = True)
+    yhat, yprob = mdl.predict( Xtest, prob = True )
+   
+    print('Classifier done!')
+
+    class_labels =[ 'RE', 'HO', 'HC', 'TR', 'WP', 'WS' ]
+    cm = confusion_matrix( ytest, yhat, labels = class_labels, cmap = 'Blues' )
+    return cm, yhat, ytest
+
+def make_feats(trial,grasps):
+    WINDOW_SIZE = 10                                # in samples
+    WINDOW_STEP = 2
+
+    #print( 'Creating filters...' )
+    td5 = TimeDomainFilter( num_features = 5 )
+    
+    key_count = 0
+    X = []
+    y=  []
+
+    for grasp in grasps:
+        emg = trial[ grasp ]  # grab the raw EMG data
+        # calculating stuff
+        feat = []
+        label = []
+ 
+        n_samples = emg.shape[0]
+      
+        for sample in range(WINDOW_SIZE,n_samples,WINDOW_STEP):
+            #for MAV analysis
+            # round(round(0.35*n_samples),-1),round(round(0.65*n_samples),-1), WINDOW_STEP ):
+
+            #feat.append( td5.filter( emg[sample-WINDOW_SIZE:sample, :] ))
+            #MAV_Es = np.zeros(8)
+            #for nEs in range(0,8):
+            #    MAV_Es[nEs] =(np.mean(abs( emg[sample-WINDOW_SIZE:sample, nEs] )))
+            feat.append(td5.filter( emg[sample-WINDOW_SIZE:sample, :]))               # calculate features
+                
+            #feat.append(MAV_Es)
+            label.append( key_count )
+    
+        X.append( np.vstack( feat ) )
+        y.append( np.vstack( label ) )
+
+        key_count += 1
+
+    # these are now matrices
+    X = np.vstack( X )
+    y = np.squeeze( np.vstack( y ) )#labels which gesture it the window is from
+    
+    #print( '\nPreprocess data...', end = ' ', flush = True )
+    
+    #zscore the data - keeps variance the same
+    mmfilter = MinMaxFilter( X, dynamic = True )
+    X = mmfilter.filter( X ) # all the original train data is train data for this new test run
+
+    return X,y
+
+    
+def find_location(CANON_trial,test_trial,grasps,text_file,shift_amounts,real_shift):
+    doplotnsave = 1
+    
+    all_shifts = []
+      # pronate, as assumed to be the most uni-directional an distinct is used for registration (hypothesis - for original data open and tripod both look pretty good - going to use that)
+
+    if doplotnsave:
+            #text_file.write(''.join([grasp,'\n']))
+            #plotting all the figures
+        plt.ioff()
+        fig, axes = plt.subplots(nrows = 3, ncols= 2, figsize = (10,7))
+
+    g_cnt = 0
+    for grasp in grasps: # #1,3
+        best_shifts = []
+    
+        #canonical position (used for finding rotation)
+
+        # get static measure of EMG (mean-absolute value of signal)
+        CANON_emg = CANON_trial[grasp]
+        CANON_val = mean_abs(CANON_emg,grasp)
+
+      
+            #plot and show shifted mean results for a grasp, indicating it is a consistent pattern
+    
+        #use RMS to guess what rotation each position is at.
+        #comparison data (test if finding rotation works)
+        test_emg = test_trial[grasp]
+        val_per_curtest = mean_abs(test_emg,grasp)
+
+        #shift cannon to find best rms
+        if doplotnsave:
+            ax = plt.subplot(3,2,g_cnt+1)
+            real, = plt.plot(val_per_curtest/max(abs(np.array(val_per_curtest))), color = 'blue',label = 'Real Trace')       
+            shifted, = plt.plot(np.roll(CANON_val,real_shift)/max(abs(np.array(CANON_val))),color='red', label = 'Shifted')
+        pred_rmses = []
+
+        for numShifts in range(0,8):#number of possibl positions
+            #shifted version of original and the test ( in terms of windowed mean absolute value function
+
+            pred_rms, real_rms= rms_meas(np.roll(CANON_val,numShifts),val_per_curtest)
+            pred_rmses.append(pred_rms)
+        #print(pred_rmses)
+
+       # if doplotnsave:
+                # writes information for each position and test rms into a text file
+                #text_file.write(''.join(['Current Test: ', str(cur_test),' RMS: ',str(real_rms),'\n']))
+                #text_file.write(''.join([str(pred_rmses),'\n']))
+        best_shift = pred_rmses.index(min(pred_rmses))
+
+        #print(best_shift)
+        best_shifts.append(best_shift)
+        if doplotnsave:
+             #   text_file.write(''.join([str(best_shift),'\n']))
+                # chose the best prediction as shift by lowest rms value
+            best_pred, = plt.plot(np.roll(CANON_val,best_shift)/max(abs(np.array(CANON_val))),color='green',label = 'Best RMS')
+           # plt.legend(handles = [real,shifted, best_pred])
+            ax.set_title(''.join([grasp, ' Shift by ',str(real_shift),' Best:', str(best_shift) ]))
+            #title to the figure when printing a figure with subplots of the results
+        g_cnt = g_cnt +1
+        all_shifts.append(best_shifts)
+        
+    if doplotnsave:
+        fig.suptitle('Mean Absolute Value per Position Grasp')
+        fig.savefig(''.join([str(real_shift),'_best_res_c_new_shift.png']))
+        plt.show()
+        
+        
+ 
+    # list of lists  of all the necessary shifts
+    return all_shifts
+
+def mean_abs(curemg,grasp):
+    WINDOW_SIZE = 10
+    WINDOW_STEP = 2 # does not effect results much
+
+    n_samples = curemg.shape[0]
+     
+    val_per_E = []
+    for nE in range(0,8):
+        feat = []
+        for sample in range(WINDOW_SIZE,n_samples,WINDOW_STEP):
+            
+            #feat.append(td5.filter(emg[sample-WINDOW_SIZE:sample,:]))
+            feat.append(np.mean(abs( curemg[sample-WINDOW_SIZE:sample,nE])))
+        temp_feat = feat
+        if nE is 0:
+            feat_fin = np.array(feat)
+            #flex_rng = [round(0.35*feat_fin.shape[0]), round(0.65*feat_fin.shape[0])]
+            #get dimensions for finding flexing zone
+            val_per_E = [(np.mean(feat_fin))]# now giving just a subsection instead of this: [range(flex_rng[0],flex_rng[1])]))]
+        else:
+            feat_fin = np.vstack((feat_fin, np.array(feat)))
+            val_per_E.append(np.mean(feat_fin[nE,:]))#range(flex_rng[0],flex_rng[1])]))
+    return val_per_E
+    
+def rms_meas(pred, real):
+    """ RMS error between interpolated and real result"""
+    rms_pred_real = np.zeros(8)
+    rms_tot = np.zeros(8)
+    real = np.array(real)/max(abs(np.array(real)))
+    pred = np.array(pred)/max(abs(np.array(pred)))
+    rms_tot = np.sqrt(np.mean((np.array(real))**2))
+    rms_pred_real = (np.sqrt(np.mean((pred - real)**2)))
+
+    return rms_pred_real, rms_tot
+
+def interp_elecs(E0, E1, P0, P1, P_new):
+    """ when the two closest electrodes are found, makes a guess about what the electrode value will ,be between the two"""
+    w_E1 = abs(float(P0)-float(P_new))/abs(float(P0)-float(P1))
+    w_E0 = abs(float(P1)-float(P_new))/abs(float(P0)-float(P1))
+    #print(E1[:,nEs])
+    #print(res)
+   
+    interp_value = np.multiply(w_E1,E1) + np.multiply(w_E0,E0)
+    return interp_value
+         
+def openN(TRAINING_DATA):
+    """ opens the file names above and makes readable by grasp type"""
+    #print( 'Loading training data...' )
+    data = pickle.load( open( TRAINING_DATA, 'rb' ) )
+      
+    grasps = [ 'rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
+    #current data only contains one 'trial' with several grasps in it
+    #process_data(grasps,data)
+    for trial in data:                              # for each trial
+        return trial
+
+################################################################################################
+#################################### The main function #########################################
+
+def main():
+
+    curdir = '.'# '/home/cynthia/forThakorLab/chris_train_6_7_18'
+    text_file = open('output_crs.txt','w')
+    text_f = open('conf_mat_res_crs.txt','w')
+    relv_files = []
+    #find all files in the directory
+    dirFiles = os.listdir(curdir)
+    for files in dirFiles:
+        if 'train_' in files:
+            relv_files.append(files)
+    relv_files = (sorted(relv_files))
+    # 0,1,2,3,3,4,5,6,7,7.5
+    #4/19 shift_amounts = [0,1,2,3,3,4,5,6,7]#
+    shift_amounts = [0, 1, 2, 3 , 4, 5, 6, 7] #tests performed  - 4/19
+
+    #relv_files = relv_files[0:10]
+
+    # grasps used
+    grasps =  ['rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
+    # [ 'rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
+
+    #change to data directory:
+    os.chdir(curdir)
+    curdir= os.getcwd()
+
+   ###plot the emg:
+   # plt.ioff()
+   # fig, axes = plt.subplots(nrows = 8, ncols= 1, figsize = (10,7))
+   # tr = openN(relv_files[0])
+
+   # for nEs in range(0,8):
+   #     ax = plt.subplot(8,1,nEs+1)
+   #     plt.plot(tr['open']['MyoArmband'][:,nEs], color = 'blue',label = 'Real Trace')
+   #     plt.ylim(-140,140)
+   # plt.show()
+   # fig.savefig('open_raw_emg.eps', format ='eps',dpi = 1000)
+
+    
+    #rng where subject most likely flexing
+    train_Xs = []
+    train_ys = []
+    test_samples = []
+    
+    for cur_shift in range(0,len(shift_amounts)):
+        cur_basis = openN(relv_files[cur_shift])
+        #breaking up the current electrode into a shift, train and test set
+        test_data = dict()
+        train_data = dict()
+        
+        for grasp in grasps:
+            sess = cur_basis[grasp]['MyoArmband'][:,:8]#just EMG electrodes
+            flex_rng = [0, sess.shape[0]]
+            #print(flex_rng) # already cut from 2 to 5 seconds
+            trial_split = range(flex_rng[0],flex_rng[1],round((flex_rng[1]-flex_rng[0])/4))
+            train_data[grasp]= (sess[range(trial_split[0],(trial_split[3]-1)),:8])
+            test_data[grasp] = (sess[range(trial_split[3],(flex_rng[1])),:8]) # so that train and test data can be created in a shuffled manner
+
+        #get feature representation of the train data for prediction
+        X_train,y_train= make_feats(train_data,grasps)
+        #list of dictonaries per grasp that need feature extraction
+        test_samples.append(test_data)
+        # features for training extracted (will use to train model)
+        train_Xs.append(X_train) 
+        train_ys.append(y_train)
+
+    #ONLINE MODE
+    #now that data is split try to predict it
+    print('Starting actual testing ...') # before was gathering the training and test data
+    shift_WINDOW = 50
+    
+    for cur_shift in range(1,len(relv_files)-1):
+        
+        best_pos = find_location(shift_samples[0],shift_samples[cur_shift],grasps,text_file,shift_amounts,shift_amounts[cur_shift])
+
+        #make training feature and test features
+        pred_shift = best_pos[3]
+        print(best_pos)
+
+        print('shift results')
+        #take the selected train data for the test
+        #shifted results
+        cm, yh,yt = classify(train_Xs[pred_shift[0]], train_ys[pred_shift[0]], test_Xs[cur_shift],test_ys[cur_shift])
+        
+        shft_res = []
+        orig_res = []
+        for n in range(0,5):
+            shft_res.append(cm[n,n])
+           
+        text_f.write('\t'.join(['pred',str(cur_shift),str(np.mean(shft_res)),str(np.std(shft_res)/np.sqrt(5)),'\n']))
+
+if __name__ == '__main__':
+    main()

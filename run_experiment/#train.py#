@@ -28,7 +28,8 @@ else:
     # imu = InertialMeasurementUnits( com = '/dev/ttyACM0', chan = [ 0, 1, 2, 3, 4 ], srate = 50.0 )
 
     print( 'Creating MYO interface...' )
-    myo = MyoArmband( com = '/dev/ttyACM0', mac = '7', srate = 200.0 )
+    myo = MyoArmband( com = '/dev/ttyACM1', mac = 'eb:33:40:96:ce:a5', srate = 200.0 )
+    #two options for mac address: one is: 'ff:f5:c9:fc:bc:17' the other 'eb:33:40:96:ce:a5'
 
     hw_list = [ myo ] #, imu ]
 

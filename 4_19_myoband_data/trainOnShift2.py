@@ -100,9 +100,8 @@ def find_location(CANON_trial,test_trial,grasps,text_file,shift_amounts,real_shi
         # get static measure of EMG (mean-absolute value of signal)
         CANON_emg = CANON_trial[grasp]
         CANON_val = mean_abs(CANON_emg,grasp)
-
       
-            #plot and show shifted mean results for a grasp, indicating it is a consistent pattern
+        #plot and show shifted mean results for a grasp, indicating it is a consistent pattern
     
         #use RMS to guess what rotation each position is at.
         #comparison data (test if finding rotation works)
@@ -135,7 +134,7 @@ def find_location(CANON_trial,test_trial,grasps,text_file,shift_amounts,real_shi
              #   text_file.write(''.join([str(best_shift),'\n']))
                 # chose the best prediction as shift by lowest rms value
             best_pred, = plt.plot(np.roll(CANON_val,best_shift)/max(abs(np.array(CANON_val))),color='green',label = 'Best RMS')
-            plt.legend(handles = [real,shifted, best_pred])
+           # plt.legend(handles = [real,shifted, best_pred])
             ax.set_title(''.join([grasp, ' Shift by ',str(real_shift),' Best:', str(best_shift) ]))
             #title to the figure when printing a figure with subplots of the results
         g_cnt = g_cnt +1
@@ -143,8 +142,8 @@ def find_location(CANON_trial,test_trial,grasps,text_file,shift_amounts,real_shi
         
     if doplotnsave:
         fig.suptitle('Mean Absolute Value per Position Grasp')
-        fig.savefig(''.join([str(real_shift),'_best_res_c.png']))
-        plt.show()
+        fig.savefig(''.join([str(real_shift),'_best_res_c_new_shift_10_6_14.eps']))
+       # plt.show()
         
         
  
@@ -213,8 +212,8 @@ def openN(TRAINING_DATA):
 def main():
 
     curdir = '/home/cynthia/forThakorLab/chris_train_6_7_18'
-    text_file = open('output.txt','w')
-    text_f = open('conf_mat.txt','w')
+    text_file = open('output_crs.txt','w')
+    text_f = open('conf_mat_res_c_50.txt','w')
     relv_files = []
     #find all files in the directory
     dirFiles = os.listdir(curdir)
@@ -224,9 +223,9 @@ def main():
     relv_files = (sorted(relv_files))
     # 0,1,2,3,3,4,5,6,7,7.5
     #4/19 shift_amounts = [0,1,2,3,3,4,5,6,7]#
-    shift_amounts = [0, 1, 2,3, 4, 5, 6, 7] #tests performed  - 4/19
+    shift_amounts = [0, 1, 2, 3, 4, 5, 6, 7] #tests performed  - 4/19
 
-    relv_files = relv_files[1:9]
+    relv_files = relv_files[1:10]
 
     # grasps used
     grasps =  ['rest', 'open', 'power', 'tripod', 'pronate', 'supinate' ]
@@ -236,57 +235,79 @@ def main():
     os.chdir(curdir)
     curdir= os.getcwd()
 
+   ###plot the emg:
+   # plt.ioff()
+   # fig, axes = plt.subplots(nrows = 8, ncols= 1, figsize = (10,7))
+   # tr = openN(relv_files[0])
+
+   # for nEs in range(0,8):
+   #     ax = plt.subplot(8,1,nEs+1)
+   #     plt.plot(tr['open']['MyoArmband'][:,nEs], color = 'blue',label = 'Real Trace')
+   #     plt.ylim(-140,140)
+   # plt.show()
+   # fig.savefig('open_raw_emg.eps', format ='eps',dpi = 1000)
+
+    
     #rng where subject most likely flexing
-    full_basis = []
+    train_test_data = []
     test_samples = []
     shift_samples = []
-    for cur_shift in range(0,len(relv_files)):
+    test_Xs =[]
+    train_Xs= []
+    test_ys = []
+    train_ys = []
+    
+    for cur_shift in range(0,len(shift_amounts)):
         cur_basis = openN(relv_files[cur_shift])
         #breaking up the current electrode into a shift, train and test set
         shift_data = dict()
-        train_data = dict()
-        test_data = dict()
+        train_test_data = dict()
         
         for grasp in grasps:
             sess = cur_basis[grasp]['MyoArmband'][:,:8]#just EMG electrodes
-            flex_rng = [round(0.25*sess.shape[0]), round(0.72*sess.shape[0])]
-            #print(flex_rng)
-            trial_split = range(flex_rng[0],flex_rng[1],round((flex_rng[1]-flex_rng[0])/5))
-            shift_data[grasp]= (sess[range(trial_split[0],(trial_split[1]-1)),:8])
-            train_data[grasp] = (sess[range(trial_split[1],(trial_split[4]-1)),:8])
-            test_data[grasp]= (sess[range(trial_split[4],(flex_rng[1])),:8])
+            flex_rng = [0, sess.shape[0]]
+            #print(flex_rng) # already cut from 2 to 5 seconds
+            trial_split = range(flex_rng[0],flex_rng[1],round((flex_rng[1]-flex_rng[0])/58)) #12 is 50
+           # print(len(trial_split))
+            shift_data[grasp]= (sess[range(trial_split[0],trial_split[1]),:8])
+            train_test_data[grasp] = (sess[range(trial_split[1],(flex_rng[1])),:8]) # so that train and test data can be created in a shuffled manner
+            print(len(shift_data[grasp]))
 
-        shift_samples.append(test_data)
-        test_samples.append(test_data)
-        full_basis.append(train_data)
+        #get features and split data for train test split for each electrode
+        
+        X_temp,y_temp= make_feats(train_test_data,grasps)
+        Xtrain, Xtest,ytrain,ytest = train_test_split(X_temp,y_temp,test_size = 0.33)
 
+        shift_samples.append(shift_data)
+        test_Xs.append(Xtest)
+        test_ys.append(ytest)
+        train_Xs.append(Xtrain)
+        train_ys.append(ytrain)
+
+    print(shift_amounts)
+    
+    #OFF LINE MODE
     #now that data is split try to predict it
-    for cur_shift in range(1,len(relv_files)-1):
+    print('Starting actual testing ...') # before was gathering the training and test data
+    for cur_shift in range(1,len(relv_files)):
         
         best_pos = find_location(shift_samples[0],shift_samples[cur_shift],grasps,text_file,shift_amounts,shift_amounts[cur_shift])
 
         #make training feature and test features
         pred_shift = best_pos[3]
+        print(best_pos)
 
-        Xtrain,ytrain = make_feats(full_basis[pred_shift[0]],grasps)
-        Xtest,ytest = make_feats(test_samples[cur_shift],grasps)
-        print(Xtrain.shape,Xtest.shape)
-        cm,yh,yt = classify(Xtrain,ytrain,Xtest,ytest)
-
-        #for on itself
-        Xt,yt = make_feats(full_basis[cur_shift],grasps)
-        Xtrain, Xtest,ytrain,ytest = train_test_split(Xt,yt,test_size = 0.33)
-        print(Xtrain.shape,Xtest.shape)
-        cm_s,yh_s,yt_s = classify(Xtrain,ytrain, Xtest,ytest)
-
+        print('shift results')
+        #take the selected train data for the test
+        #shifted results
+        cm, yh,yt = classify(train_Xs[pred_shift[0]], train_ys[pred_shift[0]], test_Xs[cur_shift],test_ys[cur_shift])
+        
         shft_res = []
         orig_res = []
         for n in range(0,5):
             shft_res.append(cm[n,n])
-            orig_res.append(cm_s[n,n])
-            print(cm[n,n] - cm_s[n,n])
-        text_f.write('\t'.join(['pred',str(np.mean(shft_res)),str(np.std(shft_res)/np.sqrt(5)),'\n']))
-        text_f.write('\t'.join(['real',str(np.mean(orig_res)),str(np.std(orig_res)/np.sqrt(5)),'\n']))
-      
+           
+        text_f.write('\t'.join(['pred',str(cur_shift),str(np.mean(shft_res)),str(np.std(shft_res)/np.sqrt(5)),'\n']))
+
 if __name__ == '__main__':
     main()
